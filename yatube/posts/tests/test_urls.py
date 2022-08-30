@@ -86,6 +86,7 @@ class PostURLTests(TestCase):
             f'/posts/{self.post2.id}/edit/': 'posts/create_post.html',
             f'/posts/{self.post.id}/': 'posts/post_detail.html',
             f'/profile/{self.user.username}/': 'posts/profile.html',
+            '/follow/': 'posts/follow.html'
         }
 
         for url, template in templates_url_names.items():
@@ -96,3 +97,70 @@ class PostURLTests(TestCase):
     def test_page_404(self):
         response = self.guest_client.get('/zxcv/')
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND)
+
+    def test_follow_url_redirect_anonymous_on_admin_login(self):
+        """Страница по адресу /'profile/<str:username>/follow/'
+        перенаправит анонимного
+        пользователя на страницу логина.
+        """
+        response = self.guest_client.get(
+            f'/profile/{self.post.author}/follow/', follow=True)
+        self.assertRedirects(
+            response, f'/auth/login/?next=/profile/{self.post.author}/follow/'
+        )
+
+    def test_unfollow_url_redirect_anonymous_on_admin_login(self):
+        """Страница по адресу /'profile/<str:username>/unfollow/'
+        перенаправит анонимного
+        пользователя на страницу логина.
+        """
+        response = self.guest_client.get(
+            f'/profile/{self.post.author}/unfollow/', follow=True)
+        self.assertRedirects(
+            response,
+            f'/auth/login/?next=/profile/{self.post.author}/unfollow/'
+        )
+
+    def test_comment_url_redirect_anonymous_on_admin_login(self):
+        """Страница по адресу /'posts/<int:post_id>/comment/'
+        перенаправит анонимного
+        пользователя на страницу логина.
+        """
+        response = self.guest_client.get(
+            f'/posts/{self.post.id}/comment/', follow=True)
+        self.assertRedirects(
+            response, f'/auth/login/?next=/posts/{self.post.id}/comment/'
+        )
+
+    def test_follow_url_redirect_authorized_on_profile(self):
+        """Страница по адресу /'profile/<str:username>/follow/'
+        перенаправит авторизованного
+        пользователя на профайл.
+        """
+        response = self.authorized_client.get(
+            f'/profile/{self.post.author}/follow/', follow=True)
+        self.assertRedirects(
+            response, f'/profile/{self.post.author}/'
+        )
+
+    def test_unfollow_url_redirect_authorized_on_profile(self):
+        """Страница по адресу /'profile/<str:username>/unfollow/'
+        перенаправит авторизованного
+        пользователя на профайл.
+        """
+        response = self.authorized_client.get(
+            f'/profile/{self.post.author}/unfollow/', follow=True)
+        self.assertRedirects(
+            response, f'/profile/{self.post.author}/'
+        )
+
+    def test_comment_url_redirect_authorized_on_post_detail(self):
+        """Страница по адресу /'posts/<int:post_id>/comment/'
+        перенаправит авторизованного
+        пользователя на пост.
+        """
+        response = self.authorized_client.get(
+            f'/posts/{self.post.id}/comment/', follow=True)
+        self.assertRedirects(
+            response, f'/posts/{self.post.id}/'
+        )

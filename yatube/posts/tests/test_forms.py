@@ -1,7 +1,7 @@
 from posts.forms import PostForm
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase
-from posts.models import Group, Post
+from posts.models import Group, Post, Comment
 from django.urls import reverse
 from datetime import date
 
@@ -42,6 +42,12 @@ class PostFormTests(TestCase):
         self.user = User.objects.create_user(username='test_user1')
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
+        self.post2 = Post.objects.create(
+            text='Тестовый текст поста авторизованный пользователь',
+            author=self.user,
+            pub_date=date.today(),
+            group=self.group
+        )
 
     def test_create_post_authorized(self):
         """Для авторизованного пользоветеля создается пост."""
@@ -156,3 +162,34 @@ class PostFormTests(TestCase):
                 image='posts/small.gif'
             ).exists()
         )
+
+    def test_add_comments_post_authorized(self):
+        """Аавторизованный пользователь и автор создает комментарий."""
+        comments_count = Comment.objects.count()
+        form_data = {
+            'text': 'Тестовый комментарий',
+        }
+        response = self.authorized_client.post((
+            reverse('posts:add_comment', kwargs={'post_id': self.post2.id})),
+            data=form_data,
+            follow=True
+        )
+        comment_1 = Comment.objects.get(id=self.post.id)
+        self.assertEqual(Comment.objects.count(), comments_count + 1)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(comment_1.text, 'Тестовый комментарий')
+
+    def test_add_comments_post_anonymous(self):
+        """Анонимный пользоветель создает комментарий."""
+        comments_count = Comment.objects.count()
+        form_data = {
+            'text': 'Тестовый комментарий',
+        }
+        response = self.guest_client.post((
+            reverse('posts:add_comment', kwargs={'post_id': self.post.id})),
+            data=form_data,
+            follow=True
+        )
+        self.assertEqual(Comment.objects.count(), comments_count)
+        self.assertRedirects(
+            response, f'/auth/login/?next=/posts/{self.post.id}/comment/')

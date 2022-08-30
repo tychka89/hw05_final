@@ -11,7 +11,7 @@ number_of_elements: int = 10
 
 def index(request):
     post_list = Post.objects.select_related('group')
-    paginator = Paginator(post_list, 10)
+    paginator = Paginator(post_list, number_of_elements)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
@@ -24,7 +24,7 @@ def index(request):
 def group_posts(request, slug):
     group = get_object_or_404(Group, slug=slug)
     post_list = group.posts.select_related('group')
-    paginator = Paginator(post_list, 10)
+    paginator = Paginator(post_list, number_of_elements)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     context = {
@@ -39,17 +39,16 @@ def profile(request, username):
     username = get_object_or_404(User, username=username)
     profile_post_list = (Post.objects.filter(author=username)
                          .order_by('-pub_date'))
-    paginator = Paginator(profile_post_list, 10)
+    paginator = Paginator(profile_post_list, number_of_elements)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     number_of_posts = profile_post_list.count()
     is_profile = True
+    following = False
     if request.user.is_authenticated:
         following = Follow.objects.filter(
             user=request.user, author=username
         ).exists()
-    else:
-        following = False
     context = {
         'page_obj': page_obj,
         'profile': profile_post_list,
@@ -90,9 +89,7 @@ def post_create(request):
             post.author = request.user
             post.save()
             return redirect('posts:profile', post.author.username)
-        else:
-            print(form.errors)
-            return render(request, 'posts/create_post.html', {'form': form})
+        return render(request, 'posts/create_post.html', {'form': form})
     return render(request, 'posts/create_post.html', {'form': form})
 
 
@@ -133,7 +130,7 @@ def add_comment(request, post_id):
 @login_required
 def follow_index(request):
     post_list = Post.objects.filter(author__following__user=request.user)
-    paginator = Paginator(post_list, 10)
+    paginator = Paginator(post_list, number_of_elements)
     page_number = request.GET.get('page_obj')
     page_obj = paginator.get_page(page_number)
     context = {'page_obj': page_obj}

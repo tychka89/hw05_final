@@ -10,6 +10,7 @@ import tempfile
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
+from http import HTTPStatus
 
 
 User = get_user_model()
@@ -60,27 +61,6 @@ class PostViewsTests(TestCase):
         self.user = User.objects.create_user(username='test_user1')
         self.authorized_client = Client()
         self.authorized_client.force_login(self.user)
-        """settings.TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.BASE_DIR)
-        small_gif = (
-            b'\x47\x49\x46\x38\x39\x61\x02\x00'
-            b'\x01\x00\x80\x00\x00\x00\x00\x00'
-            b'\xFF\xFF\xFF\x21\xF9\x04\x00\x00'
-            b'\x00\x00\x00\x2C\x00\x00\x00\x00'
-            b'\x02\x00\x01\x00\x00\x02\x02\x0C'
-            b'\x0A\x00\x3B'
-        )
-        uploaded = SimpleUploadedFile(
-            name='small.gif',
-            content=small_gif,
-            content_type='image/gif'
-        )
-        self.post2 = Post.objects.create(
-            text='Тестовый текст поста',
-            author=self.user,
-            pub_date=date.today(),
-            group=self.group,
-            image=uploaded
-        )"""
 
     def test_pages_uses_correct_template_authorized(self):
         """URL-адрес использует соответствующий шаблон."""
@@ -117,18 +97,47 @@ class PostViewsTests(TestCase):
             'posts/profile.html',
             (reverse('posts:post_detail', kwargs={'post_id': self.post2.id})):
             'posts/post_detail.html',
+            reverse('posts:follow_index'): 'posts/follow.html',
         }
         for reverse_name, template in templates_pages_names.items():
             with self.subTest(reverse_name=reverse_name):
                 response = self.authorized_client.get(reverse_name)
                 self.assertTemplateUsed(response, template)
 
-    def test_pages_uses_correct_template_anonymous(self):
-        """URL-адрес использует соответствующий шаблон."""
+    def test_pages_redirect_authorized_on_profile(self):
+        """Страницы перенаправят авторизированного пользователя на профайл."""
+        templates_pages_names = {
+            (reverse('posts:profile_follow',
+             kwargs={'username': self.post.author})):
+            f'/profile/{self.post.author}/',
+            (reverse('posts:profile_unfollow',
+             kwargs={'username': self.post.author})):
+            f'/profile/{self.post.author}/',
+            (reverse('posts:add_comment',
+             kwargs={'post_id': self.post.id})):
+            f'/posts/{self.post.id}/'
+        }
+        for reverse_name, template in templates_pages_names.items():
+            with self.subTest(reverse_name=reverse_name):
+                response = self.authorized_client.get(reverse_name)
+                self.assertRedirects(response, template)
+
+    def test_pages_redirect_anonymous_on_admin_login(self):
+        """Страницы перенаправят анонимного пользователя
+        на страницу логина."""
         templates_pages_names = {
             reverse('posts:create_post'): '/auth/login/?next=/create/',
             (reverse('posts:post_edit', kwargs={'post_id': self.post.id})):
             f'/auth/login/?next=/posts/{self.post.id}/edit/',
+            (reverse('posts:profile_follow',
+             kwargs={'username': self.post.author})):
+            f'/auth/login/?next=/profile/{self.post.author}/follow/',
+            (reverse('posts:profile_unfollow',
+             kwargs={'username': self.post.author})):
+            f'/auth/login/?next=/profile/{self.post.author}/unfollow/',
+            (reverse('posts:add_comment',
+             kwargs={'post_id': self.post.id})):
+            f'/auth/login/?next=/posts/{self.post.id}/comment/'
         }
         for reverse_name, template in templates_pages_names.items():
             with self.subTest(reverse_name=reverse_name):
@@ -208,6 +217,28 @@ class PostViewsTests(TestCase):
             with self.subTest(value=value):
                 form_field = response.context.get('form').fields.get(value)
                 self.assertIsInstance(form_field, expected)
+
+    def test_add_comment(self):
+        """Комментарий добавляется к посту."""
+        comments_count = Comment.objects.count()
+        form_data = {
+            'text': 'Тестовый комментарий',
+        }
+        response = self.authorized_client.post((
+            reverse('posts:add_comment', kwargs={'post_id': self.post.id})),
+            data=form_data,
+            follow=True
+        )
+        comment_1 = Comment.objects.get(id=self.post.id)
+        self.assertEqual(Comment.objects.count(), comments_count + 1)
+        self.assertEqual(response.status_code, HTTPStatus.OK)
+        self.assertTrue(
+            Comment.objects.filter(
+                author=self.user,
+                text=form_data['text'],
+            ).exists()
+        )
+        self.assertEqual(comment_1.text, 'Тестовый комментарий')
 
     def test_edit_post_show_correct_context(self):
         """Шаблон edit_post сформирован с правильным контекстом."""
@@ -359,6 +390,8 @@ class CacheTests(TestCase):
 @override_settings(MEDIA_ROOT=TEMP_MEDIA_ROOT)
 class FollowTests(TestCase):
     def setUp(self):
+        self.guest_client = Client()
+        self.user = User.objects.create_user(username='test_user1')
         self.client_auth_follower = Client()
         self.client_auth_following = Client()
         self.user_follower = User.objects.create_user(username='follower')
@@ -382,6 +415,13 @@ class FollowTests(TestCase):
                 kwargs={'username': self.user_following.username}))
         self.assertEqual(Follow.objects.all().count(), 1)
 
+    def test_follow_anonymous(self):
+        self.guest_client.get(
+            reverse(
+                'posts:profile_follow',
+                kwargs={'username': self.user_following.username}))
+        self.assertEqual(Follow.objects.all().count(), 0)
+
     def test_unfollow(self):
         self.client_auth_follower.get(
             reverse(
@@ -391,6 +431,24 @@ class FollowTests(TestCase):
             reverse(
                 'posts:profile_unfollow',
                 kwargs={'username': self.user_following.username}))
+        self.assertEqual(Follow.objects.all().count(), 0)
+
+    def test_unfollow_anonymous(self):
+        self.client_auth_follower.get(
+            reverse(
+                'posts:profile_follow',
+                kwargs={'username': self.user_following.username}))
+        self.guest_client.get(
+            reverse(
+                'posts:profile_unfollow',
+                kwargs={'username': self.user_following.username}))
+        self.assertEqual(Follow.objects.all().count(), 1)
+
+    def test_author_cannt_follow_himself(self):
+        self.client_auth_follower.get(
+            reverse(
+                'posts:profile_follow',
+                kwargs={'username': self.user_follower.username}))
         self.assertEqual(Follow.objects.all().count(), 0)
 
     def test_subscription_feed(self):
