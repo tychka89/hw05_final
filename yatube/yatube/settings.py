@@ -36,7 +36,6 @@ ALLOWED_HOSTS = [
 # Application definition
 
 INSTALLED_APPS = [
-    'posts.apps.PostsConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -46,7 +45,8 @@ INSTALLED_APPS = [
     'users.apps.UsersConfig',
     'core',
     'about',
-    'sorl.thumbnail'
+    'sorl.thumbnail',
+    'posts.apps.PostsConfig'
 ]
 
 MIDDLEWARE = [
